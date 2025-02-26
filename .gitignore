@@ -1,0 +1,8 @@
+diamond_embeddings.npy
+diamond_faiss_index.faiss
+__pycache__/
+sentence_transformer_model/
+.env
+authkey
+authkey.pub
+
