@@ -172,7 +172,9 @@ def hybrid_search(user_query, df, faiss_index, model, top_k=200):
         
     #Filter by Clarity if specified
     if "Clarity" in constraints:
-        df = df[df["Clarity"].str.lower().str.contains(constraints["Clarity"].lower())]
+        clarity_regex = rf'^{re.escape(constraints["Clarity"].lower())}$'
+        df = df[df["Clarity"].str.lower().str.match(clarity_regex)]
+
         if df.empty:
             print(f"No diamonds found with clarity {constraints['Clarity']}.")
             return pd.DataFrame()
@@ -335,8 +337,9 @@ Ensure the JSON is valid and can be parsed by JavaScript's JSON.parse() function
 def diamond_chatbot(user_query, df, faiss_index, model, client):
     # 1. Quick check for "hi" or "hello"
     if user_query.strip().lower() in ["hi", "hello"]:
-        print("Hello! I'm your diamond assistant. How can I help you find the perfect diamond today?")
+        print("Hey there! I'm your diamond guru 😎. Ready to help you find that perfect sparkle? Tell me what you're looking for!")
         return
+
     
     # 2. Extract constraints from the user query
     constraints = extract_constraints_from_query(user_query)

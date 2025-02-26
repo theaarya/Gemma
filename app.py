@@ -49,12 +49,12 @@ def generate_expert_analysis(user_query, diamond_data):
     """
     Generate expert analysis using Groq.
     """
-    # Convert diamond data to string format
     diamond_str = "\n".join([str(diamond) for diamond in diamond_data])
     
     prompt = f"""
     You are a diamond expert with years of experience in the industry.
     Based on the user query and the diamonds found, provide a brief 2-3 line expert recommendation.
+    Please highlight the important attributes such as Carat, Clarity, Color, Cut, etc.
     Focus on what makes these particular diamonds a good match for the customer's needs.
     Be concise but insightful.
     
@@ -92,12 +92,13 @@ def chat():
         # Extract constraints from user query
         constraints = extract_constraints_from_query(user_query)
         
-        # Check if style is missing and it's a diamond search query (not just a greeting)
+        # If the query contains some constraints but no style,
+        # return a response that tells the client to prompt for style.
         if "Style" not in constraints and not user_query.lower() in ["hi", "hello"] and len(constraints) > 0:
             return jsonify({
+                'response': "Would you prefer a lab-grown or natural diamond? Lab-grown diamonds are eco-friendly and more affordable, while natural diamonds are mined from the earth and traditionally valued.",
                 'needs_style': True
             })
-
         
         # Capture printed output from diamond_chatbot
         old_stdout = sys.stdout
@@ -110,11 +111,10 @@ def chat():
         sys.stdout = old_stdout
         response = mystdout.getvalue().strip()
         
-        # If no response was generated, provide a default
         if not response:
             response = "I'm having trouble understanding your request. Could you please provide more details about the diamond you're looking for?"
         
-        # Extract the diamond data JSON if it exists
+        # Try to extract diamond data JSON from response (if available)
         diamond_data = None
         diamond_data_match = re.search(r'<diamond-data>([\s\S]*?)</diamond-data>', response)
         if diamond_data_match:
@@ -127,11 +127,8 @@ def chat():
         expert_analysis = ""
         if diamond_data and isinstance(diamond_data, list) and len(diamond_data) > 0:
             expert_analysis = generate_expert_analysis(user_query, diamond_data)
-            
-            # Insert the expert analysis before the closing </diamond-data> tag
             response = response.replace('</diamond-data>', f'</diamond-data>\n\n<expert-analysis>{expert_analysis}</expert-analysis>')
         
-        # Convert markdown bold (text) to HTML <strong>text</strong>
         response_html = convert_markdown_to_html(response)
         
         return jsonify({
