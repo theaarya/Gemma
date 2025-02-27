@@ -2,6 +2,9 @@
 window.selectStyle = selectStyle;
 window.closeModal = closeModal;
 
+// Global variable to hold the last search query
+let lastQuery = "";
+
 /**
  * Close the diamond details modal
  */
@@ -15,12 +18,12 @@ function closeModal() {
 function processChatMessage(text) {
   // 1) Remove <diamond-data> block
   let processed = text.replace(/<diamond-data>[\s\S]*?<\/diamond-data>/, "");
-
+  
   // 2) If there's <expert-analysis>, bold only the numeric/letter values after attributes
   processed = processed.replace(/<expert-analysis>([\s\S]*?)<\/expert-analysis>/, (m, p1) => {
     return boldValues(p1);
   });
-
+  
   return processed;
 }
 
@@ -43,7 +46,7 @@ function boldValues(text) {
  */
 function addMessage(message, isUser = false) {
   const chatMessages = document.getElementById("chatMessages");
-
+  
   // Create message container
   const msgDiv = document.createElement("div");
   msgDiv.classList.add("message");
@@ -52,8 +55,8 @@ function addMessage(message, isUser = false) {
   } else {
     msgDiv.classList.add("bot-message");
   }
-
-  // Create the avatar
+  
+  // Create the avatar container
   const avatarDiv = document.createElement("div");
   avatarDiv.classList.add("avatar");
   if (isUser) {
@@ -61,18 +64,19 @@ function addMessage(message, isUser = false) {
   } else {
     avatarDiv.classList.add("bot-avatar");
   }
-
-  const avatarImg = document.createElement("img");
+  
+  // Create avatar icon using FontAwesome classes
+  const avatarIcon = document.createElement("i");
   if (isUser) {
-    avatarImg.src = "https://img.icons8.com/color/36/gender-neutral-user.png";
-    avatarImg.alt = "You";
+    avatarIcon.classList.add("fas", "fa-user");
+    avatarIcon.setAttribute("aria-label", "User Avatar");
   } else {
-    avatarImg.src = "https://img.icons8.com/color/36/diamond.png";
-    avatarImg.alt = "Gemma";
+    avatarIcon.classList.add("fas", "fa-gem");
+    avatarIcon.setAttribute("aria-label", "Gemma Avatar");
   }
-  avatarDiv.appendChild(avatarImg);
-
-  // The bubble
+  avatarDiv.appendChild(avatarIcon);
+  
+  // Create the bubble for message content
   const bubble = document.createElement("div");
   bubble.classList.add("bubble");
   if (isUser) {
@@ -80,10 +84,10 @@ function addMessage(message, isUser = false) {
   } else {
     bubble.classList.add("bot-bubble");
   }
-
+  
   bubble.innerHTML = processChatMessage(message);
-
-  // Append in correct order
+  
+  // Append in correct order based on whether message is from user or bot
   if (isUser) {
     msgDiv.appendChild(bubble);
     msgDiv.appendChild(avatarDiv);
@@ -91,33 +95,43 @@ function addMessage(message, isUser = false) {
     msgDiv.appendChild(avatarDiv);
     msgDiv.appendChild(bubble);
   }
-
+  
   chatMessages.appendChild(msgDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 /**
- * Show the style popup
+ * Update the search results bar text.
+ */
+function updateSearchResultsBar(text) {
+  const searchResultsBar = document.getElementById("search-results-bar");
+  if (searchResultsBar) {
+    searchResultsBar.textContent = text;
+  }
+}
+
+/**
+ * Show the style popup.
  */
 function showStylePopup() {
   document.getElementById("stylePopup").style.display = "flex";
 }
 
 /**
- * Called when user picks labgrown or natural
+ * Called when user picks labgrown or natural.
  */
 function selectStyle(style) {
   document.getElementById("stylePopup").style.display = "none";
   const userInput = document.getElementById("userInput");
   const sendButton = document.getElementById("sendButton");
-
+  
   // Retrieve pending query
   const pendingQuery = localStorage.getItem("pendingQuery");
   if (pendingQuery) {
     localStorage.removeItem("pendingQuery");
     const newQuery = `${pendingQuery} ${style}`;
     addMessage(`Style preference: ${style}`, true);
-
+    
     fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -133,7 +147,7 @@ function selectStyle(style) {
       addMessage("Sorry, there was an error processing your request.", false);
     });
   }
-
+  
   userInput.disabled = false;
   sendButton.disabled = false;
 }
@@ -144,14 +158,14 @@ function selectStyle(style) {
 function handleDiamondData(responseText) {
   const diamondDataRegex = /<diamond-data>([\s\S]*?)<\/diamond-data>/;
   const match = responseText.match(diamondDataRegex);
-
+  
   const expertAnalysisRegex = /<expert-analysis>([\s\S]*?)<\/expert-analysis>/;
   const analysisMatch = responseText.match(expertAnalysisRegex);
   let expertAnalysis = analysisMatch ? analysisMatch[1] : null;
-
+  
   const dynamicResults = document.getElementById("dynamic-results");
-  dynamicResults.innerHTML = ""; // clear old results
-
+  dynamicResults.innerHTML = ""; // Clear old results
+  
   // If there's expert analysis, show it in a separate card above
   if (expertAnalysis) {
     expertAnalysis = boldValues(expertAnalysis);
@@ -163,49 +177,52 @@ function handleDiamondData(responseText) {
     `;
     dynamicResults.appendChild(analysisCard);
   }
-
+  
   if (match && match[1]) {
     try {
       const diamondData = JSON.parse(match[1]);
-
+      
+      // Update search results bar with count information
+      updateSearchResultsBar(`Found ${diamondData.length} Diamond${diamondData.length !== 1 ? 's' : ''} for '${lastQuery}'`);
+      
       // Create a container for the cards
       const resultsGrid = document.createElement("div");
       resultsGrid.classList.add("diamond-results");
-
+      
       // Create a card for each diamond
-      diamondData.forEach((diamond, index) => {
+      diamondData.forEach((diamond) => {
         const card = document.createElement("div");
         card.classList.add("diamond-card");
-
+        
         // Header
         const headerDiv = document.createElement("div");
         headerDiv.className = "diamond-card-header";
-
+        
         const iconDiv = document.createElement("div");
         iconDiv.className = "diamond-icon";
         iconDiv.innerHTML = '<i class="fas fa-gem"></i>';
-
+        
         const titleDiv = document.createElement("div");
         titleDiv.className = "diamond-title";
-
+        
         const caratDiv = document.createElement("div");
         caratDiv.className = "diamond-carat";
         caratDiv.textContent = `${diamond.Carat} Carat`;
-
+        
         const shapeDiv = document.createElement("div");
         shapeDiv.className = "diamond-shape";
         shapeDiv.textContent = diamond.Shape;
-
+        
         titleDiv.appendChild(caratDiv);
         titleDiv.appendChild(shapeDiv);
-
+        
         headerDiv.appendChild(iconDiv);
         headerDiv.appendChild(titleDiv);
-
+        
         // Specs
         const specsDiv = document.createElement("div");
         specsDiv.className = "diamond-specs";
-
+        
         const specs = [
           { label: "Clarity", value: diamond.Clarity },
           { label: "Color", value: diamond.Color },
@@ -214,30 +231,30 @@ function handleDiamondData(responseText) {
           { label: "Symmetry", value: diamond.Symmetry },
           { label: "Style", value: diamond.Style },
         ];
-
+        
         specs.forEach(spec => {
           const specRow = document.createElement("div");
           specRow.className = "diamond-spec";
-
+          
           const labelSpan = document.createElement("div");
           labelSpan.className = "spec-label";
           labelSpan.textContent = `${spec.label}:`;
-
+          
           const valueSpan = document.createElement("div");
           valueSpan.className = "spec-value";
           valueSpan.textContent = spec.value || "N/A";
-
+          
           specRow.appendChild(labelSpan);
           specRow.appendChild(valueSpan);
           specsDiv.appendChild(specRow);
         });
-
+        
         // Price
         const priceDiv = document.createElement("div");
         priceDiv.className = "diamond-price";
         const priceVal = document.createElement("div");
         priceVal.className = "price-value";
-
+        
         let formattedPrice;
         try {
           formattedPrice = new Intl.NumberFormat("en-US", {
@@ -250,7 +267,7 @@ function handleDiamondData(responseText) {
         }
         priceVal.textContent = formattedPrice;
         priceDiv.appendChild(priceVal);
-
+        
         // View details button
         const detailsBtn = document.createElement("button");
         detailsBtn.className = "view-details-btn";
@@ -258,26 +275,29 @@ function handleDiamondData(responseText) {
         detailsBtn.onclick = function() {
           openModalWithDetails(diamond);
         };
-
+        
         // Build the card
         card.appendChild(headerDiv);
         card.appendChild(specsDiv);
         card.appendChild(priceDiv);
         card.appendChild(detailsBtn);
-
+        
         resultsGrid.appendChild(card);
       });
-
+      
       dynamicResults.appendChild(resultsGrid);
-
+      
     } catch (err) {
       console.error("Error parsing diamond data:", err);
     }
+  } else {
+    // If no diamond data is found, clear the search results bar
+    updateSearchResultsBar("");
   }
 }
 
 /**
- * Open a modal with diamond details
+ * Open a modal with diamond details.
  */
 function openModalWithDetails(diamond) {
   const modal = document.getElementById("detailsModal");
@@ -296,21 +316,21 @@ function openModalWithDetails(diamond) {
 }
 
 /**
- * Send user message to server
+ * Send user message to server.
  */
 function sendMessage() {
   const input = document.getElementById("userInput");
   const message = input.value.trim();
   if (!message) return;
-
+  
+  // Update the global query variable and search results bar
+  lastQuery = message;
+  updateSearchResultsBar(`Searching for '${message}'.....`);
+  
   // Add user message to chat
   addMessage(message, true);
   input.value = "";
-
-  // Show spinner
-  const spinner = document.getElementById("loading-spinner");
-  spinner.style.display = "block";
-
+  
   fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -318,7 +338,6 @@ function sendMessage() {
   })
   .then(res => res.json())
   .then(data => {
-    spinner.style.display = "none";
     if (data.needs_style) {
       localStorage.setItem("pendingQuery", message);
       showStylePopup();
@@ -328,7 +347,6 @@ function sendMessage() {
     handleDiamondData(data.response);
   })
   .catch(err => {
-    spinner.style.display = "none";
     console.error("Error:", err);
     addMessage("Sorry, I encountered an error processing your request.", false);
   });
@@ -338,7 +356,7 @@ function sendMessage() {
 document.addEventListener("DOMContentLoaded", function () {
   const sendButton = document.getElementById("sendButton");
   const userInput = document.getElementById("userInput");
-
+  
   sendButton.addEventListener("click", sendMessage);
   userInput.addEventListener("keydown", function(e) {
     if (e.key === "Enter") {

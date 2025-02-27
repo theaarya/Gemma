@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Gemma - Your Diamond Guide</title>
   <!-- FontAwesome for icons -->
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
-  />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <!-- Link to your CSS -->
   <link rel="stylesheet" href="../static/style.css" />
 </head>
@@ -17,7 +14,7 @@
     <!-- Top Header -->
     <div class="header">
       <div class="header-avatar">
-        <i class="fas fa-gem"></i>
+        <i class="fas fa-dice-d20"></i>
       </div>
       <h1>Gemma - Your Diamond Guide</h1>
       <p class="subheading">Find your perfect diamond</p>
@@ -30,17 +27,12 @@
         <!-- Initial bot message -->
         <div class="message bot-message">
           <div class="avatar bot-avatar">
-            <img src="https://img.icons8.com/color/36/diamond.png" alt="Gemma" />
+            <i class="fas fa-gem"></i>
           </div>
           <div class="bubble bot-bubble">
             <strong>Gemma</strong>: Hello! I'm Gemma, your diamond guru. How can I help you find the perfect diamond today?
           </div>
         </div>
-      </div>
-
-      <!-- Loading spinner -->
-      <div class="loading-spinner" id="loading-spinner">
-        <div class="spinner"></div>
       </div>
 
       <!-- Input container -->
@@ -55,6 +47,9 @@
         </button>
       </div>
     </div>
+
+    <!-- Search Results Bar -->
+    <div id="search-results-bar" class="search-results-bar"></div>
 
     <!-- Diamond results (expert analysis + cards) -->
     <div id="dynamic-results"></div>
