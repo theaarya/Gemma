@@ -1,12 +1,10 @@
 from flask import Flask, render_template, request, jsonify
-import io
-import sys
+import re
+import json
+import os
 from chatbot import diamond_chatbot, load_data_and_index, extract_constraints_from_query
 from groq import Groq
 from dotenv import load_dotenv
-import os
-import re
-import json
 
 def convert_markdown_to_html(text):
     """
@@ -80,62 +78,59 @@ def generate_expert_analysis(user_query, diamond_data):
 
 @app.route('/chat', methods=['POST'])
 def chat():
+    """
+    Handles incoming chat messages, processes them with the chatbot, and returns a JSON response.
+    """
     try:
         data = request.get_json()
         user_query = data.get('message', '').strip()
-        
+
         if not user_query:
             return jsonify({
                 'response': "I'm your diamond assistant. How can I help you find the perfect diamond today?"
             })
-        
-        # Extract constraints from user query
+
+        # Check for style preference if constraints are provided or ordering keywords are present, but no Style is detected.
         constraints = extract_constraints_from_query(user_query)
-        
-        # If the query contains some constraints but no style,
-        # return a response that tells the client to prompt for style.
-        if "Style" not in constraints and not user_query.lower() in ["hi", "hello"] and len(constraints) > 0:
+        ordering_keywords = ["maximum", "minimum", "lowest", "highest", "largest", "smallest", "cheapest","lowest price", "affordable", "low budget","most expensive", "highest price", "priciest", "expensive", "high budget"]
+        if ("Style" not in constraints and 
+            user_query.lower() not in ["hi", "hello"] and 
+            (len(constraints) > 0 or any(keyword in user_query.lower() for keyword in ordering_keywords))):
             return jsonify({
                 'response': "Would you prefer a lab-grown or natural diamond? Lab-grown diamonds are eco-friendly and more affordable, while natural diamonds are mined from the earth and traditionally valued.",
                 'needs_style': True
             })
-        
-        # Capture printed output from diamond_chatbot
-        old_stdout = sys.stdout
-        sys.stdout = mystdout = io.StringIO()
-        
-        # Call the chatbot logic
-        diamond_chatbot(user_query, df, faiss_index, model, client)
-        
-        # Restore stdout and get response
-        sys.stdout = old_stdout
-        response = mystdout.getvalue().strip()
-        
+
+        # Call the chatbot function and get the response
+        response = diamond_chatbot(user_query, df, faiss_index, model, client)
+
+        # Fallback response if nothing is returned
         if not response:
             response = "I'm having trouble understanding your request. Could you please provide more details about the diamond you're looking for?"
-        
-        # Try to extract diamond data JSON from response (if available)
-        diamond_data = None
+
+        # Extract structured diamond data (if available)
         diamond_data_match = re.search(r'<diamond-data>([\s\S]*?)</diamond-data>', response)
+        diamond_data = None
         if diamond_data_match:
             try:
                 diamond_data = json.loads(diamond_data_match.group(1))
-            except:
-                pass
-        
-        # Generate expert analysis if diamond data exists
+            except json.JSONDecodeError:
+                print("Error decoding diamond data JSON")
+
+        # Generate expert analysis if valid diamond data exists
         expert_analysis = ""
         if diamond_data and isinstance(diamond_data, list) and len(diamond_data) > 0:
             expert_analysis = generate_expert_analysis(user_query, diamond_data)
             response = response.replace('</diamond-data>', f'</diamond-data>\n\n<expert-analysis>{expert_analysis}</expert-analysis>')
-        
+
+        # Convert markdown to HTML for display on the frontend
         response_html = convert_markdown_to_html(response)
-        
+
         return jsonify({
             'response': response_html,
             'expert_analysis': expert_analysis
         })
-    
+
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         return jsonify({
@@ -143,4 +138,4 @@ def chat():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5500)
+    app.run(debug=True, host='0.0.0.0', port=5505)
