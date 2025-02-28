@@ -93,8 +93,10 @@ def extract_constraints_from_query(user_query):
     if carat_match:
         constraints["Carat"] = float(carat_match.group(1))
 
-    # Extract Budget (e.g., "under price 2000" or "at price 2000")
-    budget_match = re.search(r'\b(?:under|at price|price)\s*\$?(\d+(?:,\d+)?)\b', user_query, re.IGNORECASE)
+    # Extract Budget: try two patterns to handle both "price 2000$" and "2000$ price"
+    pattern1 = r'\b(?:under|at price|price)\s*\$?(\d+(?:,\d+)?)(?:\$)?\b'
+    pattern2 = r'\$?(\d+(?:,\d+)?)(?:\$)?\s*price\b'
+    budget_match = re.search(pattern1, user_query, re.IGNORECASE) or re.search(pattern2, user_query, re.IGNORECASE)
     if budget_match:
         budget_str = budget_match.group(1).replace(',', '')
         constraints["Budget"] = float(budget_str)
@@ -195,7 +197,9 @@ def hybrid_search(user_query, df, faiss_index, model, top_k=200):
 
     # If Carat is not specified, use fallback sorting:
     if "Carat" not in constraints:
-        if any(word in user_query.lower() for word in ["minimum", "lowest", "smallest"]):
+        if "PriceOrder" in constraints and constraints["PriceOrder"] == "asc":
+            results_df = df.sort_values(by="Price", ascending=True)
+        elif any(word in user_query.lower() for word in ["minimum", "lowest", "smallest"]):
             results_df = df.sort_values(by="Carat", ascending=True)
         else:
             results_df = df.sort_values(by="Price", ascending=False)
@@ -408,3 +412,4 @@ def main():
     
 if __name__ == "__main__":
     main()
+
