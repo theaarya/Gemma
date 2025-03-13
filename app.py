@@ -1,12 +1,10 @@
 from flask import Flask, render_template, request, jsonify
-import io
-import sys
-from chatbot import diamond_chatbot, load_data_and_index, extract_constraints_from_query
-from groq import Groq
-from dotenv import load_dotenv
-import os
 import re
 import json
+import os
+from chatbot import diamond_chatbot, create_solr_client, extract_constraints_from_query
+from groq import Groq
+from dotenv import load_dotenv
 
 def convert_markdown_to_html(text):
     """
@@ -16,39 +14,22 @@ def convert_markdown_to_html(text):
 
 app = Flask(__name__)
 
-# File paths
-EMBEDDING_FILE_PATH = 'diamond_embeddings.npy'
-FAISS_INDEX_FILE = 'diamond_faiss_index.faiss'
-DATAFRAME_FILE = 'diamond_dataframe.csv'
-MODEL_PATH = 'sentence_transformer_model'
-
 # Load environment variables
 load_dotenv()
 
-# Initialize Groq client
+# Initialize Groq client and Solr client
 client = Groq()
-
-# Load data, embeddings, FAISS index, and model at startup
-try:
-    df, embeddings, faiss_index, model = load_data_and_index(
-        EMBEDDING_FILE_PATH,
-        FAISS_INDEX_FILE,
-        DATAFRAME_FILE,
-        MODEL_PATH
-    )
-    print("Successfully loaded diamond data and models")
-except Exception as e:
-    print(f"Error loading data: {e}")
-    raise
-
-@app.route('/')
-def index():
-    return render_template('index.html')
+solr_client = create_solr_client()
 
 def generate_expert_analysis(user_query, diamond_data):
     """
     Generate expert analysis using Groq.
     """
+    # Guard against empty diamond data
+    if not diamond_data or len(diamond_data) == 0:
+        return None
+    
+    # Convert diamond data to readable string format
     diamond_str = "\n".join([str(diamond) for diamond in diamond_data])
     
     prompt = f"""
@@ -69,73 +50,71 @@ def generate_expert_analysis(user_query, diamond_data):
     try:
         chat_completion = client.chat.completions.create(
             messages=[{"role": "system", "content": prompt}],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.3-70b-specdec",
             temperature=0.7,
-            max_tokens=150
+            max_tokens=250
         )
-        return chat_completion.choices[0].message.content
+        analysis = chat_completion.choices[0].message.content
+        
+        # Wrap the analysis in our special tags for styling
+        return f"<expert-analysis>{analysis}</expert-analysis>"
     except Exception as e:
         print(f"Error generating expert analysis: {e}")
-        return "These diamonds match your criteria and offer excellent value. Consider factors like cut quality and color which significantly impact a diamond's brilliance."
+        return "<expert-analysis>These diamonds match your criteria and offer excellent value. Consider factors like Cut quality and Color which significantly impact a diamond's brilliance.</expert-analysis>"
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         data = request.get_json()
         user_query = data.get('message', '').strip()
-        
+
         if not user_query:
             return jsonify({
                 'response': "I'm your diamond assistant. How can I help you find the perfect diamond today?"
             })
-        
-        # Extract constraints from user query
+
         constraints = extract_constraints_from_query(user_query)
-        
-        # If the query contains some constraints but no style,
-        # return a response that tells the client to prompt for style.
-        if "Style" not in constraints and not user_query.lower() in ["hi", "hello"] and len(constraints) > 0:
+        ordering_keywords = ["maximum", "minimum", "lowest", "highest", "largest", "smallest", "cheapest", "lowest price", "affordable", "low budget", "most expensive", "highest price", "priciest", "expensive", "high budget"]
+        if ("Style" not in constraints and 
+            user_query.lower() not in ["hi", "hello"] and 
+            (len(constraints) > 0 or any(keyword in user_query.lower() for keyword in ordering_keywords))):
             return jsonify({
                 'response': "Would you prefer a lab-grown or natural diamond? Lab-grown diamonds are eco-friendly and more affordable, while natural diamonds are mined from the earth and traditionally valued.",
                 'needs_style': True
             })
-        
-        # Capture printed output from diamond_chatbot
-        old_stdout = sys.stdout
-        sys.stdout = mystdout = io.StringIO()
-        
-        # Call the chatbot logic
-        diamond_chatbot(user_query, df, faiss_index, model, client)
-        
-        # Restore stdout and get response
-        sys.stdout = old_stdout
-        response = mystdout.getvalue().strip()
-        
+
+        response = diamond_chatbot(user_query, solr_client, client)
         if not response:
             response = "I'm having trouble understanding your request. Could you please provide more details about the diamond you're looking for?"
-        
-        # Try to extract diamond data JSON from response (if available)
-        diamond_data = None
+
+        # Extract the diamond-data block from the Groq response
         diamond_data_match = re.search(r'<diamond-data>([\s\S]*?)</diamond-data>', response)
+        diamond_data = None
         if diamond_data_match:
             try:
                 diamond_data = json.loads(diamond_data_match.group(1))
-            except:
-                pass
-        
-        # Generate expert analysis if diamond data exists
-        expert_analysis = ""
-        if diamond_data and isinstance(diamond_data, list) and len(diamond_data) > 0:
-            expert_analysis = generate_expert_analysis(user_query, diamond_data)
-            response = response.replace('</diamond-data>', f'</diamond-data>\n\n<expert-analysis>{expert_analysis}</expert-analysis>')
-        
+            except json.JSONDecodeError:
+                print("Error decoding diamond data JSON")
+
+        # Generate expert analysis ONLY if we have valid diamond data
+        expert_recommendation_html = None
+        if diamond_data:
+            expert_recommendation = generate_expert_analysis(user_query, diamond_data)
+            expert_recommendation_html = convert_markdown_to_html(expert_recommendation)
+
+        # IMPORTANT: Do not append the expert analysis to the response text!
+        # Instead, return it separately.
         response_html = convert_markdown_to_html(response)
-        
+
         return jsonify({
             'response': response_html,
-            'expert_analysis': expert_analysis
+            'expert_recommendation': expert_recommendation_html
         })
-    
+
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         return jsonify({
@@ -143,4 +122,4 @@ def chat():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5500)
+    app.run(debug=False, host='0.0.0.0', port=5505)
