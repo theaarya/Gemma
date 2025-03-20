@@ -42,6 +42,14 @@
           id="userInput"
           placeholder="Ask about diamonds (e.g., 'Show me 1 carat round diamonds')"
         />
+        <div id="recordingIndicator" style="display: none;">
+          <i class="fas fa-circle-notch fa-spin" style="color: #667eea; font-size: 24px;"></i>
+          Recording...
+        </div>
+        <!-- New voice button -->
+        <button class="send-button" id="voiceButton">
+          <i class="fas fa-microphone-lines"></i>
+        </button>
         <button class="send-button" id="sendButton">
           <i class="fas fa-paper-plane"></i>
         </button>
@@ -50,15 +58,16 @@
 
     <!-- Search Results Bar -->
     <div id="search-results-bar" class="search-results-bar"></div>
+    <!-- Add this after the search results bar -->
+    <div id="expert-recommendation" class="expert-recommendation hidden">
+      <div class="expert-header">
+        <i class="fas fa-award"></i>
+        <h3>My Recommendation</h3>
+      </div>
+      <div id="expert-content" class="expert-content"></div>
+    </div>
   </div>
-  <!-- Add this after the search results bar -->
-<div id="expert-recommendation" class="expert-recommendation hidden">
-  <div class="expert-header">
-    <i class="fas fa-award"></i>
-    <h3>Expert Recommendation</h3>
-  </div>
-  <div id="expert-content" class="expert-content"></div>
-</div>
+  
   <!-- Popup for style selection -->
   <div id="stylePopup" class="popup-container">
     <div class="popup-content">

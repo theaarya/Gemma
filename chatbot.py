@@ -9,11 +9,18 @@ from groq import Groq
 # Load environment variables
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-SOLR_URL = os.getenv("SOLR_URL", "http://192.168.1.11:8983/solr/")
-SOLR_COLLECTION_NAME = os.getenv("SOLR_COLLECTION_NAME", "diamond_core")
+# if groq_api_keys_str:
+#     groq_api_keys = [key.strip() for key in groq_api_keys_str.split(",")]
+#     GROQ_API_KEY = random.choice(groq_api_keys)
+# else:
+#     GROQ_API_KEY = None
+#     print("No API key found")
+
+SOLR_URL = os.getenv("SOLR_URL")
+SOLR_COLLECTION_NAME = os.getenv("SOLR_COLLECTION_NAME")
 
 # ------------------- Solr Client Initialization -------------------    
-def create_solr_client():
+def create_solr_client():                               
     return pysolr.Solr(f'{SOLR_URL}{SOLR_COLLECTION_NAME}', always_commit=False, timeout=10)
 
 solr_client = create_solr_client()
@@ -30,7 +37,7 @@ COMMON_MISSPELLINGS = {
     "round brilliant": "ROUND", "princess cut": "PRINCESS", "emerald cut": "EMERALD",
     "igi certificate": "IGI", "gia certificate": "GIA", "gia cert": "GIA", "igi cert": "IGI",
     "lab": "lab", "laboratory": "lab", "labgrown": "lab", "lab-grown": "lab", "lab grown": "lab",
-    "nat": "natural", "naturally": "natural", "mined": "natural", "earth": "natural",
+    "nat": "natural", "naturally": "natural", "mined": "natural", "earth": "natural", 
     "karat": "carat", "carrat": "carat", "karrat": "carat", "carrot": "carat",
     "clarity": "Clarity", "colour": "Color", "kolor": "Color",
     "symetry": "Symmetry", "symmetri": "Symmetry",
@@ -42,11 +49,11 @@ COMMON_MISSPELLINGS = {
 # ------------------- Price Conversion Utility -------------------
 def convert_price_str(price_str):
     """ Converts '10k' -> 10000, '2.5k' -> 2500, and removes commas """
-    price_str = price_str.lower().replace(',', '')  # Remove commas (e.g., "10,000" -> "10000")
-    match = re.match(r'(\d+(?:\.\d+)?)\s*[kK]', price_str)  # Match "10k" or "2.5k"
+    price_str = price_str.lower().replace(',', '').replace('$', '')
+    match = re.match(r'(\d+(?:\.\d+)?)\s*[kK]', price_str)
     if match:
-        return int(float(match.group(1)) * 1000)  # Convert to integer dollars
-    return float(price_str)  # Otherwise, return as number
+        return int(float(match.group(1)) * 1000)
+    return float(price_str)
 
 def correct_misspellings(query):
     corrected_query = query
@@ -99,7 +106,8 @@ def extract_constraints_from_query(user_query):
         "lab": "lab",
         "natural": "natural",
         "ntural": "natural",
-        "natual": "natural"
+        "natual": "natural",
+        "nat": "natural"
     }
     for key, value in style_mapping.items():
         if key in query_lower:
@@ -114,20 +122,20 @@ def extract_constraints_from_query(user_query):
 
     # ----- Carat -----
     carat_patterns = [
-        # Range pattern (includes optional dashes and multiple unit variants)
-        r'(\d+(?:\.\d+)?)\s*(?:to|-)\s*(\d+(?:\.\d+)?)\s*(?:-?\s*carat[s]?|-?\s*ct[s]?|-?\s*crt|-?\s*carrat)\b',
-        # Single value pattern (includes additional variants like "point" or "pt")
-        r'(\d+(?:\.\d+)?)\s*(-?\s*carat[s]?|-?\s*ct[s]?|-?\s*crt|-?\s*carrat|-?\s*point[s]?|-?\s*pt)\b'
+        # Range pattern: matches "2 ct and 4 ct", "2ct to 4ct", or "2ct-4ct"
+        r'(\d+(?:\.\d+)?)(?:\s*)?(?:to|-|and)(?:\s*)?(\d+(?:\.\d+)?)(?:\s*)?(?:carat[s]?|ct[s]?|crt|carrat)\b',
+        # Single value pattern: matches "4 ct" or "4ct"
+        r'(\d+(?:\.\d+)?)(?:\s*)?(?:carat[s]?|ct[s]?|crt|carrat)\b'
     ]
+
+
     for pattern in carat_patterns:
         match = re.search(pattern, query_lower, re.IGNORECASE)
         if match:
-            if len(match.groups()) == 2:
-                # Range match: assign lower and upper bounds
+            if match.lastindex >= 2 and re.fullmatch(r'\d+(?:\.\d+)?', match.group(2).strip()):
                 constraints["CaratLow"] = float(match.group(1))
                 constraints["CaratHigh"] = float(match.group(2))
             else:
-                # Single value match
                 constraints["Carat"] = float(match.group(1))
             break
 
@@ -139,6 +147,8 @@ def extract_constraints_from_query(user_query):
  
     # ----- Budget / Price Extraction -----
     price_patterns = [
+        (r'\bprice\s+(?:range|btw)(?:\s*between)?\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?(?:[kK])?)(?:\$)?\s*(?:to|and|-)\s*(?:\$)?(\d+(?:,\d+)?(?:\.\d+)?(?:[kK])?)(?:\$)?',
+        lambda m: {"BudgetLow": convert_price_str(m.group(1)), "BudgetHigh": convert_price_str(m.group(2))}),
         # Range extraction: e.g. "between $1,000 and $2k"
         (r'\b(?:between|bet|btw|betwen)\s*\$?(\d+(?:,\d+)?[kK]?)\s*(?:and|to|-)\s*\$?(\d+(?:,\d+)?[kK]?)',
         lambda m: {"BudgetLow": convert_price_str(m.group(1)), "BudgetHigh": convert_price_str(m.group(2))}),
@@ -194,9 +204,12 @@ def extract_constraints_from_query(user_query):
             found_color = True
             break
     if not found_color:
-        simple_color_match = re.search(r'\b([defghijklmn])(?:\s*grade|\s*color|\s*gia)?\b', user_query, re.IGNORECASE)
+        simple_color_match = re.search(r'\b([defghijklmn])\s*(?:color|grade|gia)\b', user_query, re.IGNORECASE)
+        if not simple_color_match:
+            simple_color_match = re.search(r'\b(?:color|grade|gia)\s*([defghijklmn])\b', user_query, re.IGNORECASE)
         if simple_color_match:
             constraints["Color"] = simple_color_match.group(1).lower()
+
     
     # ----- Color Range -----
     color_range_match = re.search(r'\bcolors?\s+(?:between|from|range)?\s+([defghijklmn])\s+(?:to|and|through|[-])\s+([defghijklmn])', query_lower)
@@ -408,58 +421,60 @@ def direct_solr_search(user_query, solr_client, top_k=10):
         filter_queries.append(f"Style:({style_value})")
 
     # ------------------ Carat Filtering ------------------
-    if "Carat" in constraints:
+    if "CaratLow" in constraints and "CaratHigh" in constraints:
+        filter_queries.append(f"Carat:[{constraints['CaratLow']} TO {constraints['CaratHigh']}]")
+    elif "Carat" in constraints:
         carat_val = constraints["Carat"]
         tolerance = 0.05 * carat_val  # ±5% tolerance
         filter_queries.append(f"Carat:[{carat_val - tolerance} TO {carat_val + tolerance}]")
-    if "CaratLow" in constraints and "CaratHigh" in constraints:
-        filter_queries.append(f"Carat:[{constraints['CaratLow']} TO {constraints['CaratHigh']}]")
 
     # ------------------ Price Filtering & Sorting ------------------
     if "BudgetMax" in constraints:
         budget_max = constraints["BudgetMax"]
-        min_price = max(100, 0.5 * budget_max)  # Ensure minimum reasonable price
-        relaxed_max = min(budget_max, budget_max * 1.05)  # Allow only slight variation
-        filter_queries.append(f"Price:[{min_price} TO {relaxed_max}]")
-        sort_fields.insert(0, f"abs(sub(Price,{budget_max})) asc")  # Prioritize closest to budget
+        # Define a narrow band: from 90% of budget_max up to the budget_max.
+        narrow_lower_bound = max(100, budget_max * 0.9)  # Ensure a reasonable minimum
+        filter_queries.append(f"Price:[{narrow_lower_bound} TO {budget_max}]")
+        sort_fields.insert(0, f"abs(sub(Price,{budget_max})) asc")
 
     elif "BudgetMin" in constraints:
         budget_min = constraints["BudgetMin"]
-        relaxed_min = max(0.9 * budget_min, 4000)  # Allow 10% lower-priced options
+        # Allow a slightly lower floor for flexibility
+        relaxed_min = max(0.9 * budget_min, 100)  # Removed the 4000 limit
         filter_queries.append(f"Price:[{relaxed_min} TO *]")
-        sort_fields.insert(0, f"abs(sub(Price,{budget_min})) asc")  # Prioritize closest to budget
+        sort_fields.insert(0, f"abs(sub(Price,{budget_min})) asc")
 
     elif "BudgetStrict" in constraints and constraints["BudgetStrict"]:
         strict_budget = constraints["Budget"]
-        relaxed_max = strict_budget * 1.1  # Allow up to 10% over budget
+        relaxed_max = strict_budget * 1.05  # Allow up to 5% over budget (instead of 10%)
         filter_queries.append(f"Price:[* TO {relaxed_max}]")
-        sort_fields.insert(0, f"abs(sub(Price,{strict_budget})) asc")  # Prioritize closest to budget
+        sort_fields.insert(0, f"abs(sub(Price,{strict_budget})) asc")
 
     elif "BudgetLow" in constraints and "BudgetHigh" in constraints:
         budget_low = constraints["BudgetLow"]
         budget_high = constraints["BudgetHigh"]
-        relaxed_high = budget_high * 1.15  # Allow slightly above budget range
+        relaxed_high = budget_high * 1.1  # Allow slightly above budget range (10% buffer)
         filter_queries.append(f"Price:[{budget_low} TO {relaxed_high}]")
         target_price = (budget_low + budget_high) / 2
-        sort_fields.insert(0, f"abs(sub(Price,{target_price})) asc")  # Prioritize closest to budget range
+        sort_fields.insert(0, f"abs(sub(Price,{target_price})) asc")
 
     elif "BudgetTarget" in constraints:
         target_price = constraints["BudgetTarget"]
-        tolerance = max(0.15 * target_price, 1000)  # ±15% or at least ±$1000
-        relaxed_high = target_price * 1.15  # Allow up to 15% higher suggestions
+        tolerance = max(0.15 * target_price, 500)  # Reduced tolerance (±15% or min $500)
+        relaxed_high = target_price * 1.1  # Allow up to 10% higher suggestions
         filter_queries.append(f"Price:[{target_price - tolerance} TO {relaxed_high}]")
-        sort_fields.insert(0, f"abs(sub(Price,{target_price})) asc")  # Prioritize closest to target
+        sort_fields.insert(0, f"abs(sub(Price,{target_price})) asc")
 
     elif "Budget" in constraints:
         budget = constraints["Budget"]
-        min_price = max(0.5 * budget, 1000)  # Ensure a reasonable minimum price
-        relaxed_max = budget * 1.15  # Allow up to 15% above budget
+        min_price = max(0, 0.5 * budget)  # Allow lower range instead of forcing 1000
+        relaxed_max = budget * 1.1  # Allow up to 10% above budget
         filter_queries.append(f"Price:[{min_price} TO {relaxed_max}]")
-        sort_fields.insert(0, f"abs(sub(Price,{budget})) asc")  # Prioritize closest to budget
+        sort_fields.insert(0, f"abs(sub(Price,{budget})) asc")
 
+    # Sorting override for cheapest or expensive requests
     if any(word in user_query.lower() for word in ["cheapest", "lowest price", "affordable", "low budget", "least expensive"]):
         constraints["PriceOrder"] = "asc"
-    elif any(word in user_query.lower() for word in ["most expensive", "highest price", "priciest", "expensive", "high budget"]):
+    elif any(word in user_query.lower() for word in ["most expensive", "highest price", "priciest", "expensive", "high budget", "max price"]):
         constraints["PriceOrder"] = "desc"
 
 
@@ -558,13 +573,14 @@ def direct_solr_search(user_query, solr_client, top_k=10):
 def generate_groq_response(user_query, relevant_data, client):
     prompt = f"""
 You are a friendly, expert diamond consultant with years of experience helping customers find the perfect diamond.
+User Query: "{user_query}"
 Your response should be personal, warm, and engaging. Provide an expert recommendation based on the customer's query.
-
 Please analyze the following diamond details and produce a JSON response that includes the top matching diamonds.
 Your response should include:
 1. A brief introductory paragraph (one or two sentences) in a conversational tone explaining what you found and why the top pick stands out.
-2. A special marker <diamond-data> immediately followed by a valid JSON array of diamond objects.
-3. Close with </diamond-data>.
+2. A comparison of the user query with the recommended diamonds. If the recommendations do not exactly match the query (for example, in carat, fluorescence, or price), include a note explaining that exact matches were not available and describe why one of the alternatives might be better.
+3. Immediately following your explanation, include a special marker <diamond-data> and then a valid JSON array of diamond objects.
+4. Close with </diamond-data>.
 
 Each diamond object must include the following attributes:
 - Carat
@@ -599,52 +615,24 @@ Make sure the JSON is valid and can be parsed by JavaScript's JSON.parse() funct
     )
     return chat_completion.choices[0].message.content
 
-# def groq_response(user_query, diamond_data, groq_client):
-#     prompt = f"""
-# You are a friendly, expert diamond consultant with years of experience helping customers find the perfect diamond.
-# Your response should be personal, warm, and engaging. Based on the customer's query and the diamond data provided, please do the following:
-# 1. Begin with an introductory paragraph that states how many diamonds were found for the query (e.g., "Found 3 Diamonds for '3 carat'").
-# 2. Provide a brief expert recommendation tailored for a 3-carat diamond—mentioning attributes like cut, color, and clarity.
-# 3. List each diamond recommendation on separate lines. For each diamond, display:
-#    - Carat (e.g., "3.01 Carat")
-#    - Clarity (e.g., "Clarity: SI1" or "Clarity: N/A" if not available)
-#    - Color (e.g., "Color: G")
-#    - Cut (e.g., "Cut: Excellent")
-#    - Polish (or "N/A")
-#    - Symmetry (or "N/A")
-#    - Style (or "N/A")
-#    - Price (formatted as currency, e.g., "$15,999")
-# 4. End each recommendation with "View Details".
-# 5. Enclose the list of diamond recommendations between the tags <diamond-data> and </diamond-data>.
-
-# Customer Query: "{user_query}"
-
-# Here is the diamond data in JSON for reference:
-# {diamond_data}
-
-# Please produce the final output as plain text following the above instructions.
-# """
-#     response = groq_client.chat.completions.create(
-#         messages=[{"role": "system", "content": prompt}],
-#         model="qwen-2.5-32b",
-#         temperature=0.7,
-#         max_tokens=1500
-#     )
-#     return response.choices[0].message.content
-
-
 # ------------------- Main Chatbot Logic -------------------
 def diamond_chatbot(user_query, solr_client, client):
     if user_query.strip().lower() in ["hi", "hello"]:
         return "Hey there! I'm your diamond guru. Ready to help you find that perfect sparkle? Tell me what you're looking for!"
 
     constraints = extract_constraints_from_query(user_query)
+    
+    # -------------------- Debugging --------------------
+    # print("Extracted Constraints:", constraints)
+    # ---------------------------------------------------
     if not constraints and not any(keyword in user_query.lower() for keyword in ["maximum", "minimum", "lowest", "highest", "largest", "smallest"]):
         return "Hello! I'm your diamond assistant. Please let me know your preferred carat, clarity, color, cut, or budget so I can help you find the perfect diamond."
 
-    docs = direct_solr_search(user_query, solr_client, top_k=10)
+    docs = direct_solr_search(user_query, solr_client, top_k=100)
     if not docs:
         return "No matching diamonds found. Please try a different query."
+
+    random.shuffle(docs)  # Randomize the order of the retrieved documents
 
     top_5 = docs[:5]
     relevant_data_list = []
@@ -672,11 +660,12 @@ def diamond_chatbot(user_query, solr_client, client):
         relevant_data_list.append(diamond_info)
     relevant_data_json = json.dumps(relevant_data_list, indent=2)
 
+    # Groq response comment out while debug to prevent api calls!
     groq_response = generate_groq_response(user_query, relevant_data_json, client)
     return groq_response
 
-def main():
-    client = Groq()
+def main(): 
+    client = Groq(api_key=GROQ_API_KEY)
     solr_client = create_solr_client()
 
     while True:
