@@ -1,5 +1,7 @@
 # 💎 Gemma: AI Chatbot for Diamond Marketplace  
 
+> **Note:** A new **v2 branch** is now available featuring major improvements and enhancements. While this main branch is fully cloneable and runnable from our GitHub repository, the **v2 branch** leverages a local Solr instance (diamond_core) for its advanced diamond search capabilities and integrates images and videos for an enriched user experience. For full details on the changes and setup instructions, please refer to the README in the v2 branch.
+
 Welcome to **Gemma**, an AI-powered chatbot designed to assist users in finding the perfect diamond based on their preferences. This chatbot integrates advanced **natural language processing (NLP)** and **machine learning** techniques to provide personalized recommendations.  
 
 ---
@@ -89,7 +91,3 @@ The chatbot will be available at:
 - **FAISS**: Vector search library for efficient similarity searches  
 - **SentenceTransformer**: NLP model for text embeddings  
 - **Groq API**: AI-based chatbot response generation
-
-
-  
-its good work...
