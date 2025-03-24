@@ -605,32 +605,8 @@ def generate_groq_response(user_query, relevant_data, client):
 You are a friendly, expert diamond consultant with years of experience helping customers find the perfect diamond.
 User Query: "{user_query}"
 Your response should be personal, warm, and engaging. Provide an expert recommendation based on the customer's query.
-Please analyze the following diamond details and produce a JSON response that includes the top matching diamonds.
-Your response should include:
-1. A brief introductory paragraph (one or two sentences) in a conversational tone explaining what you found and why the top pick stands out.
-2. A comparison of the user query with the recommended diamonds. If the recommendations do not exactly match the query (for example, in carat, fluorescence, or price), include a note explaining that exact matches were not available and describe why one of the alternatives might be better.
-3. Immediately following your explanation, include a special marker <diamond-data> and then a valid JSON array of diamond objects.
-4. Close with </diamond-data>.
-
-Each diamond object must include the following attributes:
-- Carat
-- Clarity
-- Color
-- Cut
-- Shape
-- Price
-- Style
-- Polish
-- Symmetry
-- Lab
-- Flo
-- Length
-- Height
-- Width
-- Depth
-- pdf
-- image
-- video
+Please analyze the following diamond details and give a very concise response. NOT LONGER THAN 3 SENTENCES.
+Your response should include: A brief introductory paragraph (one or two sentences) in a conversational tone explaining what you found and why the top pick stands out while comparing the user query with the recommended diamonds. If the recommendations do not exactly match the query (for example, in carat, fluorescence, or price), include a note explaining that exact matches were not available and describe why one of the alternatives might be better.
 
 Below are some diamond details:
 {relevant_data}
@@ -692,7 +668,9 @@ def diamond_chatbot(user_query, solr_client, client):
 
     # Groq response, comment out while debug to prevent api calls!
     groq_response = generate_groq_response(user_query, relevant_data_json, client)
-    return groq_response
+    diamond_data_response = f"<diamond-data>\n{relevant_data_json}\n</diamond-data>"
+    final_response = f"{groq_response}\n{diamond_data_response}"
+    return final_response
 
 def main(): 
     client = Groq(api_key=GROQ_API_KEY)
